@@ -9,7 +9,7 @@ answer and no answer both score zero.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -17,10 +17,12 @@ from typing import Any, Callable
 
 from .budget import BestSoFar, TimeBudget
 from .contracts import Candidate, Problem, SpecSheet, VerdictReport
+from .contracts import ClauseFinding
 from .generator import battery_values, check_generator, deterministic_battery
 from .model_generator import request_generators
 from .runlog import RunLog
 from .stages import adjudicate, analyse, generate, verify
+from .triage import run_triage
 
 # Fraction of the remaining budget any single smoke-run may consume, and a hard
 # cap so a generous deadline doesn't mean minute-long stub runs.
@@ -42,6 +44,7 @@ class SolveResult:
     report: VerdictReport
     budget: TimeBudget
     runlog: RunLog
+    clause_findings: list = field(default_factory=list)  # triage trap-log entries (never gate)
 
     @property
     def delivered(self) -> bool:
@@ -58,6 +61,8 @@ def solve(
     runlog: Optional[RunLog] = None,
     input_client: Any = None,
     to_request: Optional[Callable[[Any], Any]] = None,
+    triage_client: Any = None,
+    triage_to_request: Optional[Callable[[Any], Any]] = None,
 ) -> SolveResult:
     """``input_client`` + ``to_request`` wire the model-written generator (via
     client2's ``solver.llm`` seam) so the performance probe runs on real max-size
@@ -149,6 +154,24 @@ def solve(
             generator_covered=gen_report.covered,
         )
 
+    # 3b. clause-ambiguity triage (optional; only when a client is wired). TRIAGE,
+    # NEVER A GATE: its clause disagreements are appended for adjudication and its
+    # findings logged; verdicts (already computed above) are never touched.
+    clause_findings: list[ClauseFinding] = []
+    if triage_client is not None and triage_to_request is not None:
+        with log.stage("triage") as rec:
+            try:
+                clause_dis, clause_findings = run_triage(
+                    spec, triage_client, triage_to_request, timeout_s=max(1.0, smoke_s)
+                )
+                report.disagreements.extend(clause_dis)  # routed to adjudicate, not to verdicts
+            except Exception as exc:
+                log.event("triage failed", error=str(exc))
+            rec.note(
+                f"{len(clause_findings)} clause finding(s)",
+                clauses=[f.clause for f in clause_findings],
+            )
+
     # 4. adjudicate disagreements -> the chosen candidate. Defensive: use the
     # adjudicated result only when it is a Candidate, else fall back to the
     # verified best. (The real two-arg adjudicate lands with the generation
@@ -187,4 +210,5 @@ def solve(
         report=report,
         budget=budget,
         runlog=log,
+        clause_findings=clause_findings,
     )

@@ -142,6 +142,11 @@ def _expand(value_spec: Any) -> Any:
     return value_spec
 
 
+def expand_params(params: Sequence[Any]) -> list[Any]:
+    """Materialise a plan's ``params`` list into concrete positional args."""
+    return [_expand(v) for v in params] if isinstance(params, list) else []
+
+
 def materialize(plan_items: Sequence[dict], default_kind: str = "edge") -> list[LabeledInput]:
     out: list[LabeledInput] = []
     for item in plan_items:

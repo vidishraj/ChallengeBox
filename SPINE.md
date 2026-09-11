@@ -91,6 +91,19 @@ Real (landed since the spine):
   via an injected client; `solve(input_client=..., to_request=...)` is the flip
   that feeds the coverage-checked battery and the max-size inputs to the perf
   probe. Until the credential lands, the deterministic battery is used.
+- `triage` (`solver/triage.py`) is clause-ambiguity triage - the semantic
+  complement to the bounds diff, aimed at the traps a scaling detector cannot see
+  (a clause read two ways). Per flagged clause it emits two candidate READINGS as
+  programs and a discriminating input, runs both, and keeps the clause ONLY if
+  the readings actually diverge (value-level) on that input; otherwise it is
+  dropped (self-validating: no discriminating input, no finding). Outputs are a
+  routed adjudication (a Disagreement with kind == "clause") and a structured
+  trap-log entry (reading-taken-versus-rejected). It is TRIAGE, NEVER A GATE:
+  there is no code path from a clause finding to a Verdict (a unit test asserts
+  verdicts are unchanged when triage runs), because the flagging and codegen
+  models share a comprehension bias. Prompted adversarially at a higher-tier
+  model for partial decorrelation; the model call is gated like the generator and
+  wired via `solve(triage_client=..., triage_to_request=...)`.
 - `verify` runs four checks (cheapest, most independent first): PROPERTY
   ASSERTIONS on each output against the extracted canonical-form properties (a
   confirmed failure, no second candidate required); NAIVE-VERSUS-FAST against a

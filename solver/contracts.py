@@ -321,3 +321,24 @@ class VerdictReport:
     verdicts: list[Verdict] = field(default_factory=list)
     best: Optional[Candidate] = None
     disagreements: list[Disagreement] = field(default_factory=list)
+
+
+@dataclass
+class ClauseFinding:
+    """The structured trap-log entry produced by clause-ambiguity triage: the
+    reading-TAKEN versus reading-REJECTED record for one contended clause, with
+    the discriminating input on which the two readings actually diverge.
+
+    This is a TRIAGE artifact. It NEVER marks a Verdict: its only downstream uses
+    are a routed adjudication (a Disagreement with kind == "clause") and this
+    record, which documents how the trap was found and handled. A finding without
+    a constructible discriminating input is not a finding and is dropped, not
+    emitted."""
+
+    clause: str  # the contended sentence
+    reading_a: str  # prose of the interpretation A
+    reading_b: str  # prose of the interpretation B
+    discriminating_input: Any  # concrete input on which A and B diverge
+    output_a: Any  # A's output on that input
+    output_b: Any  # B's output on that input
+    seed: Optional[int] = None
