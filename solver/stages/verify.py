@@ -1,21 +1,27 @@
 """verify(candidates, spec) -> VerdictReport.
 
-Thin vertical slice: the two checks that need NO oracle beyond the statement and
-each other, so they can catch even a unanimous misreading.
+The verification checks, in the order they should run (cheapest and most
+independent first):
 
 1. PROPERTY ASSERTIONS. Run each candidate and check its output against the
-   canonical-form properties analyse() extracted (ordering, distinctness). A
-   violation is a CONFIRMED failure with no second candidate required. Run first
-   and conservatively (see solver.props).
-2. DIFFERENTIAL TESTING. Run every candidate on the same inputs; where OK outputs
-   differ, emit a Disagreement carrying the failing input and each output, and
-   classify it value / form / status so a formatting difference is not reported
-   as a wrong answer.
+   canonical-form properties analyse() extracted. A violation is a CONFIRMED
+   failure with no second candidate required.
+2. NAIVE-VERSUS-FAST. If a literal clause-by-clause reference candidate is
+   present (origin == "literal-reference"), differential-test every other
+   candidate against it on small inputs. A VALUE disagreement with the reference
+   (not a mere form difference) marks that candidate wrong. This catches the
+   failure binary scoring punishes hardest: right on small inputs by luck, wrong
+   in a way the reference exposes.
+3. DIFFERENTIAL TESTING across candidates, classifying each divergence value /
+   form / status so a formatting difference is not reported as a wrong answer.
+4. PERFORMANCE PROBE. If a maximum-size input is supplied, time each candidate
+   on it (Rust uses the unchecked build); a candidate that does not clear it
+   within the limit is rejected, because correct-but-slow scores zero exactly
+   like wrong. The reference is exempt (it is the slow oracle, by design).
 
-Not in this slice (later pieces): the max-size performance probe, the bounds-diff
-hot-path targeting, and naive-versus-fast. Inputs here come from a TRIVIAL
-in-domain generator derived from the spec; the real spec-derived generator (a
-distinct model call) replaces it without changing this contract.
+Inputs default to a trivial in-domain generator; the real spec-derived generator
+and the max-size inputs aimed at the bounds-diff hot paths plug into ``inputs`` /
+``big_inputs`` without changing this contract.
 """
 
 from __future__ import annotations
@@ -32,8 +38,11 @@ from ..contracts import (
     Verdict,
     VerdictReport,
 )
+from ..perf import perf_probe
 from ..props import canonicalize, check_output_properties, classify_value_disagreement
 from ..sandbox import run_python_candidate, run_rust_candidate
+
+REFERENCE_ORIGIN = "literal-reference"
 
 _STATUS_TAG = {
     ExecStatus.CRASHED: "<crashed>",
@@ -45,9 +54,6 @@ _STATUS_TAG = {
 
 
 def _trivial_python_inputs(spec: SpecSheet) -> list[list[Any]]:
-    """A tiny in-domain argument battery, one value per parameter by inferred
-    type. Placeholder for the spec-derived generator; enough to run the engine
-    and to exercise differential + property checks on real candidates."""
     default = {"list": [], "str": "", "int": 0}
     small = {"list": [1], "str": "a", "int": 1}
 
@@ -68,34 +74,9 @@ def _run(candidate: Candidate, spec: SpecSheet, one_input: Any, timeout_s: float
         return run_python_candidate(candidate.source, spec.entrypoint, one_input, timeout_s=timeout_s)
     if candidate.language == RUST:
         return run_rust_candidate(candidate.source, one_input, run_timeout_s=timeout_s)
-    from ..contracts import ExecResult  # local import to avoid cycle at top
+    from ..contracts import ExecResult
 
     return ExecResult(status=ExecStatus.COMPILE_ERROR, error=f"unsupported language {candidate.language!r}")
-
-
-def _classify(outputs: dict[str, Any], statuses: dict[str, ExecStatus], spec: SpecSheet) -> Optional[str]:
-    """Given every candidate's result on one input, decide the disagreement kind
-    (or None if they agree). ``outputs`` holds OK return values only."""
-    ok_ids = list(outputs)
-    all_ids = list(statuses)
-
-    # Status divergence: at least one ran OK and at least one did not.
-    if ok_ids and len(ok_ids) != len(all_ids):
-        return "status"
-
-    if len(ok_ids) < 2:
-        return None
-
-    # All ran OK: do the OK outputs agree raw?
-    canon = {cid: _safe_canon(outputs[cid]) for cid in ok_ids}
-    raw_equal = all(outputs[cid] == outputs[ok_ids[0]] for cid in ok_ids)
-    if raw_equal:
-        return None
-    # Differ raw: form if they agree once normalised, else value.
-    first = canon[ok_ids[0]]
-    if all(canon[cid] == first for cid in ok_ids):
-        return "form"
-    return "value"
 
 
 def _safe_canon(v: Any) -> Any:
@@ -105,12 +86,31 @@ def _safe_canon(v: Any) -> Any:
         return ("raw", repr(v))
 
 
+def _classify(outputs: dict[str, Any], statuses: dict[str, ExecStatus]) -> Optional[str]:
+    ok_ids = list(outputs)
+    all_ids = list(statuses)
+    if ok_ids and len(ok_ids) != len(all_ids):
+        return "status"
+    if len(ok_ids) < 2:
+        return None
+    if all(outputs[cid] == outputs[ok_ids[0]] for cid in ok_ids):
+        return None
+    canon = {cid: _safe_canon(outputs[cid]) for cid in ok_ids}
+    first = canon[ok_ids[0]]
+    if all(canon[cid] == first for cid in ok_ids):
+        return "form"
+    return "value"
+
+
 def verify(
     candidates: Sequence[Candidate],
     spec: SpecSheet,
     *,
     timeout_s: float = 10.0,
     inputs: Optional[Sequence[Any]] = None,
+    reference_id: Optional[str] = None,
+    big_inputs: Optional[Sequence[Any]] = None,
+    perf_limit_s: Optional[float] = None,
 ) -> VerdictReport:
     candidates = list(candidates)
     if not candidates:
@@ -120,36 +120,79 @@ def verify(
         inputs = _trivial_python_inputs(spec) if spec.language == PYTHON else _trivial_rust_inputs(spec)
     inputs = list(inputs)
 
-    # results[cid][i] = ExecResult for candidate cid on input i
-    results: dict[str, list] = {c.id: [] for c in candidates}
-    for c in candidates:
-        for one in inputs:
-            results[c.id].append(_run(c, spec, one, timeout_s))
+    if reference_id is None:
+        reference_id = next((c.id for c in candidates if c.origin == REFERENCE_ORIGIN), None)
 
-    # --- per-candidate verdicts: ran on every input + no property violation ---
+    # small-input runs
+    results: dict[str, list] = {c.id: [_run(c, spec, one, timeout_s) for one in inputs] for c in candidates}
+    ref_runs = results.get(reference_id) if reference_id else None
+
     verdicts: list[Verdict] = []
     for c in candidates:
         runs = results[c.id]
+        is_reference = c.id == reference_id
         ran_all = all(r.ran_ok for r in runs)
+
         prop_violations: list[str] = []
         for r in runs:
             if r.ran_ok:
                 prop_violations.extend(check_output_properties(r.value, spec.output_properties))
-        passed = ran_all and not prop_violations
-        if not ran_all:
-            first_bad = next(r for r in runs if not r.ran_ok)
-            detail = first_bad.error or first_bad.status.value
-        elif prop_violations:
-            detail = "property violation: " + "; ".join(sorted(set(prop_violations)))
-        else:
-            detail = "ran + properties held"
+
+        # 2. naive-vs-fast against the literal reference (skip the reference itself)
+        ref_mismatch: Optional[int] = None
+        if ref_runs is not None and not is_reference:
+            for i, r in enumerate(runs):
+                rr = ref_runs[i]
+                if r.ran_ok and rr.ran_ok and classify_value_disagreement(r.value, rr.value) == "value":
+                    ref_mismatch = i
+                    break
+
+        # 4. performance probe at max size (skip the reference; it is the slow oracle)
+        perf_ok: Optional[bool] = None
+        max_dur = 0.0
+        if big_inputs and perf_limit_s and not is_reference:
+            perf_ok = True
+            for b in big_inputs:
+                pr = perf_probe(c, spec.entrypoint, b, time_limit_s=perf_limit_s)
+                max_dur = max(max_dur, pr.duration_s)
+                if not pr.perf_ok:
+                    perf_ok = False
+
+        passed = ran_all and not prop_violations and ref_mismatch is None and perf_ok is not False
         verdicts.append(
-            Verdict(candidate_id=c.id, passed=passed, detail=detail, exec_result=runs[0] if runs else None)
+            Verdict(
+                candidate_id=c.id,
+                passed=passed,
+                detail=_detail(runs, ran_all, prop_violations, ref_mismatch, perf_ok),
+                exec_result=runs[0] if runs else None,
+                perf_ok=perf_ok,
+                max_input_duration_s=round(max_dur, 4),
+            )
         )
 
-    best = next((c for c in candidates if _passed(verdicts, c.id)), None)
+    passed_ids = {v.candidate_id for v in verdicts if v.passed}
+    # the reference is never the shipped best (correct but slow by design)
+    best = next((c for c in candidates if c.id in passed_ids and c.id != reference_id), None)
 
-    # --- differential testing across candidates, per input ---
+    disagreements = _differential(candidates, spec, results, inputs)
+    return VerdictReport(verdicts=verdicts, best=best, disagreements=disagreements)
+
+
+def _detail(runs, ran_all, prop_violations, ref_mismatch, perf_ok) -> str:
+    if not ran_all:
+        bad = next(r for r in runs if not r.ran_ok)
+        return bad.error or bad.status.value
+    if ref_mismatch is not None:
+        return f"disagrees with literal reference on input #{ref_mismatch}"
+    if prop_violations:
+        return "property violation: " + "; ".join(sorted(set(prop_violations)))
+    if perf_ok is False:
+        return "too slow at max size"
+    suffix = " + perf ok" if perf_ok else ""
+    return "ran + properties held" + suffix
+
+
+def _differential(candidates, spec, results, inputs) -> list[Disagreement]:
     disagreements: list[Disagreement] = []
     for i, one in enumerate(inputs):
         outputs: dict[str, Any] = {}
@@ -159,7 +202,7 @@ def verify(
             statuses[c.id] = r.status
             if r.ran_ok:
                 outputs[c.id] = r.value
-        kind = _classify(outputs, statuses, spec)
+        kind = _classify(outputs, statuses)
         if kind is None:
             continue
         divergent = [c for c in candidates if c.id in statuses]
@@ -177,9 +220,4 @@ def verify(
                 canonical_hint="; ".join(spec.output_properties) if kind == "form" else "",
             )
         )
-
-    return VerdictReport(verdicts=verdicts, best=best, disagreements=disagreements)
-
-
-def _passed(verdicts: list[Verdict], cid: str) -> bool:
-    return any(v.candidate_id == cid and v.passed for v in verdicts)
+    return disagreements

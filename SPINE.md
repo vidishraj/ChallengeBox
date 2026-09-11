@@ -71,21 +71,27 @@ Real (landed since the spine):
   catalogue is not converged. Its `status` earns a `clear-verified` verdict only
   on positive evidence and keeps it distinct from `inconclusive` / `not-run`;
   `residue_fired` is logged per problem as a held-out coverage metric.
-- `verify` (thin slice) runs the two checks that need no oracle beyond the
-  statement: PROPERTY ASSERTIONS on each output against the extracted
-  canonical-form properties (a violation is a confirmed failure, no second
-  candidate required), and DIFFERENTIAL TESTING across candidates on the same
-  inputs, classifying each divergence value / form / status so a formatting
-  difference is not reported as a wrong answer. `passed` now means *ran and its
-  properties held*.
+- `verify` runs four checks (cheapest, most independent first): PROPERTY
+  ASSERTIONS on each output against the extracted canonical-form properties (a
+  confirmed failure, no second candidate required); NAIVE-VERSUS-FAST against a
+  literal clause-by-clause reference candidate (a value disagreement with the
+  reference marks the fast candidate wrong); DIFFERENTIAL TESTING across
+  candidates, classifying each divergence value / form / status; and a
+  PERFORMANCE PROBE (`solver/perf.py`) that times a candidate on a maximum-size
+  input (Rust unchecked build) and rejects correct-but-slow, since that scores
+  zero exactly like wrong. `passed` means *ran, properties held, agreed with the
+  reference, and cleared max size in time*.
 
 Stubbed (the next workstreams):
 
 - `generate` emits placeholder candidates that run without crashing (so the
   best-so-far invariant holds) but solve nothing.
-- `verify` does NOT yet do the max-size performance probe, bounds-diff hot-path
-  targeting, or naive-versus-fast; inputs come from a trivial in-domain
-  generator, not the real spec-derived one. These are the later pieces.
+- `verify`'s naive-versus-fast and performance probe are BUILT and unit-tested,
+  but inert in the live pipeline until their inputs exist: naive-versus-fast
+  needs a literal reference candidate (generation side), and the performance
+  probe needs a real maximum-size input aimed at the bounds-diff hot paths (the
+  spec-derived generator). Small inputs still come from a trivial in-domain
+  generator. Wiring these to real inputs is what activates them end to end.
 - `adjudicate` returns the first disagreeing candidate (the real resolver, which
   normalises form disagreements and re-verifies, lands with generation).
 
