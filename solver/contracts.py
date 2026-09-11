@@ -154,7 +154,12 @@ class SpecSheet:
     params: list[ParamDomain] = field(default_factory=list)  # input domains + bounds
     invariants: list[str] = field(default_factory=list)  # stated invariants
     edge_cases: list[str] = field(default_factory=list)  # trap / edge-case clauses
-    output_contract: str = ""  # what the return value / stdout must be
+    output_contract: str = ""  # what the return value / stdout must be (prose)
+    output_properties: list[str] = field(default_factory=list)  # checkable canonical-form
+    # clauses (sorted / maximal / lexicographic / input-order / distinct ...). A
+    # non-canonical but numerically correct answer scores zero, and two correct
+    # candidates can differ only in form; these become verify() property
+    # assertions so a form difference is not misread as a value disagreement.
     bounds_diff: Optional[BoundsDiff] = None  # input-vs-derived bounds; hot paths for the perf probe
     target: Optional[TargetPolicy] = None  # language-target constraints
     raw_statement: str = ""
@@ -232,10 +237,19 @@ class Disagreement:
     candidates: list[Candidate]  # the divergent candidates (>= 2)
     clause_hint: str = ""  # relevant spec sentence(s) if verify localised; else ""
     seed: Optional[int] = None  # RNG seed that produced failing_input (repro; input may be huge)
-    kind: str = "value"  # "value" = differing returns; "status" = one ran, another crashed/timed-out/overflowed
-    # outputs[cid] is the return value (python) / stdout (rust) when that
-    # candidate ran OK; for a candidate that produced no value it is a string tag
-    # "<crashed>" / "<timed-out>" / "<overflowed>" and kind == "status".
+    kind: str = "value"  # see below: "value" | "status" | "form"
+    canonical_hint: str = ""  # for kind == "form": the canonical-form clause(s) to normalise by
+    # kind semantics:
+    #   "value"  differing returns that stay different after canonical-form
+    #            normalisation — a genuine correctness divergence.
+    #   "status" one candidate ran, another crashed/timed-out/overflowed;
+    #            outputs[cid] is the string tag "<crashed>"/"<timed-out>"/"<overflowed>".
+    #   "form"   returns differ RAW but agree once normalised by the extracted
+    #            canonical form (two correct candidates, different normalisation).
+    #            canonical_hint carries the clause so adjudicate() can
+    #            normalise-and-recompare instead of spending a model call.
+    # outputs[cid] is the return value (python) / stdout (rust) when the candidate
+    # ran OK, else the status tag above.
 
 
 @dataclass
