@@ -81,10 +81,29 @@ class TestStatusDistinctness(unittest.TestCase):
         self.assertNotEqual(clear, incon)
 
 
+class TestValueDomainVersusScaling(unittest.TestCase):
+    """A magnitude bounding a stored VALUE is a width concern, not a scaling trap
+    (calibrated against patchboard, the one genuinely generous sample)."""
+
+    def test_value_domain_magnitude_is_not_a_scaling_hot_path(self):
+        bd = detect_bounds("Attributes are in 1..=10^9.")
+        self.assertEqual(bd.hot_paths, [])
+
+    def test_count_magnitude_is_a_scaling_hot_path(self):
+        bd = detect_bounds("The demand reaches 10^9 units.")
+        self.assertTrue(bd.hot_paths)
+
+
 class TestClassify(unittest.TestCase):
     def test_known_cue_maps_to_category(self):
         self.assertEqual(classify("it performs cost spin iterations"), "counter-not-a-loop")
         self.assertEqual(classify("return the maximal intervals, canonical form"), "canonical-form-output")
+
+    def test_new_categories_classify(self):
+        self.assertEqual(classify("apply the first matching rule"), "ordered-rule-priority")
+        self.assertEqual(classify("count the consecutive indicators ending at the left"), "context-sensitive-look-back")
+        self.assertEqual(classify("creates version i from an earlier version b"), "persistent-or-branching-version-state")
+        self.assertEqual(classify("its complete unfolding into a tree"), "exponential-unfolding-of-shared-dag")
 
     def test_unknown_returns_empty(self):
         self.assertEqual(classify("the sky is a pleasant shade of blue"), "")

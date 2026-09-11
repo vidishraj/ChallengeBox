@@ -67,7 +67,30 @@ TRAP_CATEGORIES: list[tuple[str, str, tuple[str, ...]]] = [
      ("64-bit", "signed", "exceeds", "overflow", "10^", "1e1", "1e2", "1e3", "u128", "i128")),
     ("canonical-form-output", "the answer must be a uniquely-normalised shape",
      ("canonical", "maximal", "lexicograph", "cannot be combined", "normalis", "normaliz")),
+    ("ordered-rule-priority", "overlapping predicates resolved by rule order, not OR",
+     ("first matching rule", "rule order", "apply the first", "first matching", "authoritative")),
+    ("context-sensitive-look-back", "a decision depends on a variable-length backward scan",
+     ("consecutive", "parity", "nearest", "skipping", "preceding", "ending at", "look back", "look-back")),
+    ("persistent-or-branching-version-state", "versions branch from earlier ones; needs confluent persistence",
+     ("earlier version", "versions may", "may branch", "persistent", "from an earlier", "ancestry", "version i")),
+    ("exponential-unfolding-of-shared-dag", "a shared DAG unfolds exponentially; DP over the folded form",
+     ("complete unfolding", "unfolding into a tree", "unfolding", "multiple incoming", "folded", "directed acyclic")),
 ]
+
+# A large magnitude that bounds a stored VALUE (an integer a cell holds, an
+# identifier) is a numeric-WIDTH concern (use i128), NOT a scaling trap. Only a
+# magnitude on a COUNT / demand / aggregate / span drives complexity. Keeping
+# these apart stops a generous problem (patchboard: attributes in 1..=10^9) from
+# reading as a scaling trap and telling the generator to over-engineer.
+_VALUE_DOMAIN_CUES = (
+    "attribute", "attributes", "identifier", "identifiers", "value", "values",
+    "stored", "cell", "64-bit", "signed", "the integer",
+)
+_SCALING_CUES = (
+    "count", "counts", "number of", "iteration", "iterations", "times", "retries",
+    "retry", "demand", "spin", "spins", "operations", "length", "sum", "total",
+    "repeat", "repetition", "span", "spans", "reach", "reaches", "exceeds",
+)
 
 # Subjects that mark an "at most N X" as a DERIVED quantity (what to enumerate)
 # rather than an input size.
@@ -222,13 +245,19 @@ def detect_bounds(statement: str) -> BoundsDiff:
         # not a loop), so flag it. classify() routes it to a category or residue.
         val, val_str = _max_magnitude(s)
         if val >= _LARGE:
-            add_hot(
-                quantity=_subject_of_magnitude(s),
-                sentence=s,
-                magnitude=val_str,
-                why="a bound/value at this magnitude drives a derived quantity past input scale",
-            )
-            derived.append(_subject_of_magnitude(s))
+            low = s.lower()
+            is_value_domain = any(c in low for c in _VALUE_DOMAIN_CUES) and not any(c in low for c in _SCALING_CUES)
+            if is_value_domain:
+                # numeric WIDTH concern (use i128), not a complexity trap.
+                input_bounds.append(f"numeric domain (width) {val_str}: {s[:70]}")
+            else:
+                add_hot(
+                    quantity=_subject_of_magnitude(s),
+                    sentence=s,
+                    magnitude=val_str,
+                    why="a bound/value at this magnitude drives a derived quantity past input scale",
+                )
+                derived.append(_subject_of_magnitude(s))
             continue
         if val > 0:
             # a modest explicit number: an input-side bound for the diff.
