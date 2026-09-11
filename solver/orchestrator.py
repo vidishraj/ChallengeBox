@@ -76,26 +76,35 @@ def solve(
         candidates = generate(spec, n_candidates)
         rec.note(f"{len(candidates)} candidate(s)", ids=[c.id for c in candidates])
 
-    # 3. verify (exercises the real sandbox) + establish best-so-far ASAP
+    # 3. verify (property assertions + differential) + establish best-so-far ASAP
     with log.stage("verify") as rec:
         smoke_s = budget.slice_for(_SMOKE_FRACTION, cap=_SMOKE_CAP_S)
         report = verify(candidates, spec, timeout_s=max(1.0, smoke_s))
+        # Best-so-far on disk = the first candidate that RAN (never fail closed),
+        # even if it later fails a property; a verified-better one overwrites it.
         for verdict in report.verdicts:
-            if verdict.passed:
+            if verdict.exec_result and verdict.exec_result.ran_ok:
                 cand = next(c for c in candidates if c.id == verdict.candidate_id)
                 if best.offer(cand):
                     log.event("best-so-far written (ran ok)", candidate=cand.id, verified=False)
                 break
-        ran = sum(1 for v in report.verdicts if v.passed)
+        passed = sum(1 for v in report.verdicts if v.passed)
         rec.note(
-            f"{ran}/{len(report.verdicts)} ran; best={report.best.id if report.best else None}",
+            f"{passed}/{len(report.verdicts)} passed; "
+            f"best={report.best.id if report.best else None}; "
+            f"disagreements={len(report.disagreements)}",
             statuses={v.candidate_id: (v.exec_result.status.value if v.exec_result else "?") for v in report.verdicts},
+            disagreement_kinds=[d.kind for d in report.disagreements],
             smoke_timeout_s=round(smoke_s, 3),
         )
 
-    # 4. adjudicate disagreements (none in the stub) -> the chosen candidate
+    # 4. adjudicate disagreements -> the chosen candidate. Defensive: use the
+    # adjudicated result only when it is a Candidate, else fall back to the
+    # verified best. (The real two-arg adjudicate lands with the generation
+    # workstream; this stays correct with the stub until then.)
     with log.stage("adjudicate") as rec:
-        chosen = adjudicate(report.disagreements) or report.best
+        resolved = adjudicate(report.disagreements)
+        chosen = resolved if isinstance(resolved, Candidate) else report.best
         rec.note("chosen=" + (chosen.id if chosen else "none"))
 
     # 5. commit the verified-better choice over the best-so-far

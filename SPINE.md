@@ -53,15 +53,31 @@ Real (do not treat as placeholder):
 - **Run log** (`solver/runlog.py`): per-stage timings + decisions, written to
   `<solution>.runlog.json`.
 
+Real (landed since the spine):
+
+- `analyse` mines the statement into a structured `SpecSheet`: entrypoint
+  signature, per-parameter domains/bounds, invariants, edge-case clauses, the
+  output contract, and the canonical-form output properties (sorted / maximal /
+  lexicographic / distinct) that a numerically-correct-but-mis-formatted answer
+  would violate. Best-effort and regex/keyword driven; a missed clause degrades
+  the signal, it does not corrupt it.
+- `verify` (thin slice) runs the two checks that need no oracle beyond the
+  statement: PROPERTY ASSERTIONS on each output against the extracted
+  canonical-form properties (a violation is a confirmed failure, no second
+  candidate required), and DIFFERENTIAL TESTING across candidates on the same
+  inputs, classifying each divergence value / form / status so a formatting
+  difference is not reported as a wrong answer. `passed` now means *ran and its
+  properties held*.
+
 Stubbed (the next workstreams):
 
-- `analyse` returns the entrypoint, the target policy, and the raw statement; it
-  does NOT parse domains/invariants/edge cases yet.
 - `generate` emits placeholder candidates that run without crashing (so the
   best-so-far invariant holds) but solve nothing.
-- `verify` only checks "did it run" via the sandbox; `passed` means *ran*, not
-  *correct*. Verification without public examples is the headline open question.
-- `adjudicate` returns the first disagreeing candidate.
+- `verify` does NOT yet do the max-size performance probe, bounds-diff hot-path
+  targeting, or naive-versus-fast; inputs come from a trivial in-domain
+  generator, not the real spec-derived one. These are the later pieces.
+- `adjudicate` returns the first disagreeing candidate (the real resolver, which
+  normalises form disagreements and re-verifies, lands with generation).
 
 ## The README's exam questions, at spine level
 
