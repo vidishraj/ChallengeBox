@@ -61,6 +61,16 @@ Real (landed since the spine):
   lexicographic / distinct) that a numerically-correct-but-mis-formatted answer
   would violate. Best-effort and regex/keyword driven; a missed clause degrades
   the signal, it does not corrupt it.
+- `bounds_diff` (in `solver/bounds.py`) is the trap thesis made structural:
+  it separates what the INPUTS bound from what the PROCESS can produce. Primary
+  output is ENUMERATION HINTS (an explicit derived bound, "at most 150000
+  maximal rectangles", read as what to enumerate); secondary is HOT PATHS (a
+  derived quantity large or unbounded and unaccounted for, which the perf probe
+  will aim at). It is OPEN-WORLD: a category registry (extensible data) PLUS a
+  residue channel for trap-shaped structure that matches nothing, since the
+  catalogue is not converged. Its `status` earns a `clear-verified` verdict only
+  on positive evidence and keeps it distinct from `inconclusive` / `not-run`;
+  `residue_fired` is logged per problem as a held-out coverage metric.
 - `verify` (thin slice) runs the two checks that need no oracle beyond the
   statement: PROPERTY ASSERTIONS on each output against the extracted
   canonical-form properties (a violation is a confirmed failure, no second

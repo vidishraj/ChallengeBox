@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 
+from ..bounds import detect_bounds
 from ..contracts import ParamDomain, Problem, SpecSheet
 from ..policy import policy_for
 
@@ -264,7 +265,7 @@ def analyse(statement: str, problem: Problem) -> SpecSheet:
         edge_cases=edge_cases,
         output_contract=output_contract,
         output_properties=output_properties,
-        bounds_diff=None,  # filled by the bounds-diff piece
+        bounds_diff=detect_bounds(statement),
         target=policy_for(problem.language),
         raw_statement=statement,
     )

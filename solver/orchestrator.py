@@ -65,10 +65,16 @@ def solve(
     # 1. analyse
     with log.stage("analyse") as rec:
         spec = analyse(problem.statement, problem)
+        bd = spec.bounds_diff
         rec.note(
             "specsheet ready",
             signature=spec.signature,
             target=(spec.target.python_min if spec.target else None),
+            bounds_status=(bd.status if bd else None),
+            enumeration_hints=(len(bd.enumeration_hints) if bd else 0),
+            hot_paths=(len(bd.hot_paths) if bd else 0),
+            # held-out coverage metric: did the open-world residue channel fire.
+            residue_fired=(bd.residue_fired if bd else False),
         )
 
     # 2. generate

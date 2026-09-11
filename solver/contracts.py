@@ -132,13 +132,68 @@ class HotPathQuantity:
 
 
 @dataclass
+class EnumerationHint:
+    """An EXPLICIT bound on a derived quantity, read as an instruction for WHAT
+    TO ENUMERATE. "The number of maximal surviving rectangles is at most 150000"
+    is not merely a flag; it tells you the intended object and its scale, i.e.
+    the algorithm. This is the PRIMARY output of the bounds diff."""
+
+    quantity: str  # the object to enumerate, e.g. "maximal surviving rectangles"
+    bound: str  # the explicit bound, e.g. "150000"
+    source_sentence: str
+    note: str = ""
+
+
+@dataclass
+class Residue:
+    """Trap-shaped structure that matches NOTHING in the known catalogue.
+
+    The catalogue is not converged (the richness curve is still climbing), so a
+    closed classifier would return a confident "no trap" on the category it has
+    never seen — a check that cannot fire on the case it most needs to catch.
+    The residue channel makes a miss EXPECTED: unexplained bounds, derived
+    quantities no category accounts for, override clauses fitting no known
+    pattern. A residue entry is a lead for a human / downstream, not a verdict."""
+
+    description: str  # what looks trap-shaped
+    source_sentence: str
+    why: str = ""
+
+
+# BoundsDiff.status values. "clear" and "unmatched"/"not-run" are DELIBERATELY
+# distinct: an empty result and a verified-empty result look identical unless
+# made different, and a negative "no trap" verdict must rest on positive
+# evidence, not on the mere absence of a catalogue match.
+SCAN_NOT_RUN = "not-run"  # detector did not run
+SCAN_TRAPS_FOUND = "traps-found"  # at least one enumeration hint or hot path
+SCAN_CLEAR_VERIFIED = "clear-verified"  # ran, derived quantities enumerated, each accounted for by a bound
+SCAN_INCONCLUSIVE = "inconclusive"  # ran, but could not establish either (NOT the same as clear)
+
+
+@dataclass
 class BoundsDiff:
     """analyse()'s bounds subtraction: what the inputs bound vs what the process
-    can produce. ``hot_paths`` is the flagged difference verify() aims at."""
+    can produce. Open-world by design — a classifier over the known catalogue
+    PLUS a residue channel for the unmatched.
+
+    Primary output is ``enumeration_hints`` (explicit derived bounds = algorithm
+    hints); ``hot_paths`` is the secondary flag (large/unbounded & unaccounted);
+    ``residue`` is the anomaly channel; ``status`` distinguishes verified-clear
+    from not-run / inconclusive."""
 
     input_bounds: list[str] = field(default_factory=list)  # bounded input quantities + bounds
     derived_quantities: list[str] = field(default_factory=list)  # quantities the process produces
-    hot_paths: list[HotPathQuantity] = field(default_factory=list)  # large/unbounded & not input-bound
+    enumeration_hints: list[EnumerationHint] = field(default_factory=list)  # PRIMARY: explicit derived bounds
+    hot_paths: list[HotPathQuantity] = field(default_factory=list)  # SECONDARY: large/unbounded & unaccounted
+    residue: list[Residue] = field(default_factory=list)  # open-world: trap-shaped but unmatched
+    status: str = SCAN_NOT_RUN  # one of SCAN_* above
+
+    @property
+    def residue_fired(self) -> bool:
+        """Runlog metric: did the anomaly channel surface anything on this
+        problem. Feeds the held-out coverage claim (K consecutive problems with
+        no residue before coverage is asserted)."""
+        return bool(self.residue)
 
 
 @dataclass
