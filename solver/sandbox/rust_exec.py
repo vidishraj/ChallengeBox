@@ -44,7 +44,17 @@ def run_rust_candidate(
     compile_timeout_s: float = DEFAULT_COMPILE_TIMEOUT_S,
     run_timeout_s: float = DEFAULT_RUN_TIMEOUT_S,
     mem_bytes: int = DEFAULT_MEM_BYTES,
+    overflow_checks: bool = True,
 ) -> ExecResult:
+    """Compile and run a Rust candidate.
+
+    ``overflow_checks=True`` (default) is the CORRECTNESS build: integer overflow
+    panics into a detectable :data:`ExecStatus.OVERFLOWED` instead of wrapping.
+    ``overflow_checks=False`` is the TIMING build used by the performance probe —
+    the checks cost real cycles, and we judge "fast enough at maximum size"
+    against the same unchecked build the grader effectively runs, so a candidate
+    that is correct is not discarded as slow for a tax the grader never pays.
+    """
     started = time.monotonic()
 
     rustc = rustc_path()
@@ -61,10 +71,15 @@ def run_rust_candidate(
         binary = d / "candidate"
         src.write_text(source, encoding="utf-8")
 
-        # --- compile (optimized, overflow checks on) ---
+        rustc_cmd = [rustc, "-O"]
+        if overflow_checks:
+            rustc_cmd += ["-C", "overflow-checks=on"]
+        rustc_cmd += ["-o", str(binary), str(src)]
+
+        # --- compile ---
         try:
             comp = subprocess.run(
-                [rustc, "-O", "-C", "overflow-checks=on", "-o", str(binary), str(src)],
+                rustc_cmd,
                 capture_output=True,
                 text=True,
                 timeout=compile_timeout_s,

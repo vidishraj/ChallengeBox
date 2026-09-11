@@ -49,6 +49,25 @@ class TestPolicy(unittest.TestCase):
     def test_plain_39_code_clean(self):
         self.assertEqual(python_target_violations("def f(x):\n    return x\n"), [])
 
+    def test_pep604_param_annotation_flagged(self):
+        # `X | Y` parses on 3.9 but raises TypeError when the annotation is
+        # evaluated on the grader; compile() alone would miss it.
+        violations = python_target_violations("def f(x: int | str):\n    return x\n")
+        self.assertTrue(violations)
+        self.assertIn("604", violations[0])
+
+    def test_pep604_return_annotation_flagged(self):
+        self.assertTrue(python_target_violations("def f() -> int | None:\n    return None\n"))
+
+    def test_pep604_nested_annotation_flagged(self):
+        # Buried inside a subscript, on a helper that is never called.
+        src = "from typing import Optional\ndef helper(x: Optional[int | str]):\n    return x\n"
+        self.assertTrue(python_target_violations(src))
+
+    def test_union_import_is_clean(self):
+        src = "from typing import Union\ndef f(x: Union[int, str]):\n    return x\n"
+        self.assertEqual(python_target_violations(src), [])
+
 
 @unittest.skipUnless(RUSTC, "rustc not available")
 class TestRustSandbox(unittest.TestCase):

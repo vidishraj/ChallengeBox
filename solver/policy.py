@@ -16,6 +16,8 @@ thing to remember:
 
 from __future__ import annotations
 
+import ast
+
 from .contracts import PYTHON, RUST, TargetPolicy
 
 PYTHON_MIN = "3.9"
@@ -59,7 +61,42 @@ def python_target_violations(source: str) -> list[str]:
     version, so it stays correct as the floor moves.
     """
     try:
-        compile(source, "<candidate>", "exec")
+        tree = compile(source, "<candidate>", "exec", flags=ast.PyCF_ONLY_AST)
     except SyntaxError as exc:  # 3.10+ syntax on a 3.9 interpreter lands here
         return [f"not valid under Python {PYTHON_MIN}: {exc.msg} (line {exc.lineno})"]
-    return []
+
+    # PEP 604 (`X | Y`) annotations parse and — under `from __future__ import
+    # annotations`, or on an uncalled helper — never evaluate, so the compile
+    # gate above cannot see them; on a 3.9 grader they raise TypeError the moment
+    # the annotation is evaluated. Flag them explicitly from the AST.
+    return _pep604_annotation_violations(tree)
+
+
+def _pep604_annotation_violations(tree: ast.AST) -> list[str]:
+    violations: list[str] = []
+
+    def uses_bitor(node: ast.AST) -> bool:
+        return any(
+            isinstance(n, ast.BinOp) and isinstance(n.op, ast.BitOr)
+            for n in ast.walk(node)
+        )
+
+    for node in ast.walk(tree):
+        anns: list = []
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            a = node.args
+            for arg in [*a.posonlyargs, *a.args, *a.kwonlyargs, a.vararg, a.kwarg]:
+                if arg is not None and arg.annotation is not None:
+                    anns.append(arg.annotation)
+            if node.returns is not None:
+                anns.append(node.returns)
+        elif isinstance(node, ast.AnnAssign):
+            anns.append(node.annotation)
+        for ann in anns:
+            if uses_bitor(ann):
+                line = getattr(ann, "lineno", "?")
+                violations.append(
+                    f"PEP 604 `X | Y` type annotation is 3.10+ (line {line}); "
+                    f"use typing.Union / Optional under Python {PYTHON_MIN}"
+                )
+    return violations
