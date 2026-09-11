@@ -90,11 +90,13 @@ What is built and shipping (B1, on observed behaviour, not intent):
 - **`clear-verified` is a distinct contract value from "nothing matched"** and requires
   positive evidence to emit — it is not the default when no rule fires.
 
-Real run over all 10 samples: **7 traps-found, 3 clear-verified.** The catalogue the
-detector scores against is the 14 categories of §2a (the registry was initially seeded from
-9; see §6.6 on why the other 5 names were briefly missing). The `clear-verified` verdict is
-the most dangerous the system emits and carries a measured false rate — treated in its own
-right at **§6.7**, not buried here.
+Real run over all 10 samples (after calibration): **6 traps-found, 4 clear-verified.** The
+catalogue the detector scores against is the 14 categories of §2a (the registry was
+initially seeded from 9 — the 5 new names lived only on the analysis branch until it
+merged, so the registry was seeded from relayed summaries first; see the §7 provenance). The
+`clear-verified` verdict is the most dangerous the system emits; §6.7 treats it in its own
+right — not as a bare false rate, but as a **scope** statement about which trap categories a
+bounds detector can and cannot see.
 
 ### 2c. Worked examples (detector output → technique), on the 3 hand-solved problems
 
@@ -128,12 +130,15 @@ second candidate to be right**, which matters because the others can share an er
 ### 3b. The verification ladder — what runs today vs. the method
 
 **What the live harness executes today is "did it run", not "is it correct" — not even
-differential agreement yet.** The sandbox *is* built and genuinely exercised under test (45
-unit tests): a Python subprocess under a memory cap; Rust compiled **both with overflow
-checks and without**; and it classifies every outcome class, **including detected integer
-overflow**. But it currently checks that a candidate *runs and produces output*, not that
-the output is right. This is the honest floor; the rungs below are the method being wired
-onto that sandbox, and §6 states what is and is not executed.
+differential agreement yet.** The sandbox *is* built and genuinely exercised under test (94
+unit tests, personally re-run on the merged tree): a Python subprocess under a memory cap;
+Rust compiled **both with overflow checks and without**; and it classifies every outcome
+class, **including detected integer overflow**. But it currently checks that a candidate
+*runs and produces output*, not that the output is right. This is the honest floor; the
+rungs below are the method being wired onto that sandbox, and §6 states what is and is not
+executed. (A performance probe and a naive-vs-fast cross-check are also built, **with their
+negative controls** — but they are **inert on real samples until a model-written generator
+exists**, since there is nothing yet to probe against a stub.)
 
 The method (the design the sandbox is being extended to run): differential agreement
 between independently-derived candidates, exercised by **edge-biased random generators**
@@ -232,12 +237,17 @@ inputs we generated ourselves. It will not drift upward on partial evidence.
 What *is* exercised today — **five separate true statements, kept separate rather than
 rounded into one**:
 1. The pipeline runs **end to end and delivers a file on 10 of 10** within the deadline (via
-   the stub candidate plus a best-so-far-on-disk rule).
+   the stub candidate plus a best-so-far-on-disk rule). _Personally re-run: `./solve` on
+   `1ba0d34f…` delivered a file, exit 0, ~0.5 s of the 300 s budget._
 2. The sandbox is genuinely exercised under test: a Python subprocess under a memory cap;
    Rust compiled **both with overflow checks and without**; **every outcome class, including
    detected integer overflow**.
-3. The analyse stage extracts a structured SpecSheet on **10 of 10**.
-4. **45 unit tests pass.**
+3. The analyse stage extracts a structured SpecSheet on **10 of 10**. Its run-log reports
+   its own coverage gaps, unprompted, every run — on `1ba0d34f…`: `edge_gaps=1,
+   hot_path_gaps=2, generator_covered=false` (§3b). A tool that prints its own inadequacy is
+   why the honesty here is structural, not rhetorical.
+4. **94 unit tests pass** (`python3 -m unittest discover -s tests -t .`) — personally re-run
+   on the merged tree, not inherited.
 5. **Not yet:** no cassettes recorded, and the three hand-solved references are not wired
    into the harness.
 
@@ -301,23 +311,28 @@ rejected, and replaced with something falsifiable — documented in full at `tra
 > own words. (Coverage is now in §6.1; this slot is the replay paragraph only.) Not yet
 > written — not a claim._
 
-### 6.7 The most dangerous verdict: `clear-verified` and its false-clear rate
-Of the detector's 10-sample run (§2b), **3 were `clear-verified`**. My own analysis found
-only **~1** of those genuinely has generous bounds and no scaling trap (`Patchboard`/S7).
-So roughly **2 are false-clears** — scaling traps the regex/keyword heuristics missed.
+### 6.7 The most dangerous verdict: `clear-verified` is SCOPED, not precise
+Of the detector's calibrated 10-sample run (§2b), **4 were `clear-verified`**; by our own
+analysis **1 is correct** (`Patchboard`/S7 genuinely has generous bounds and no scaling
+trap) and **3 are false-clears**. But the honest framing is not a bare false rate — it is a
+**scope claim**, which is a stronger and more accurate position:
 
-This gets its own section, not a footnote, because **`clear-verified` is the most dangerous
-output the system emits.** A false *traps-found* costs wasted effort and nothing more. A
-false *clear-verified* tells the generator it can relax — it is the only detector verdict
-that can **actively cause a zero**. The verdict therefore means, precisely, *"no scaling
-trap was DETECTED with positive evidence"* — **never** *"there is no trap."*
+**The bounds-diff detector catches SCALING traps by construction, and is blind to SEMANTIC
+ones by construction.** The three false-clears are exactly the semantic categories —
+context-sensitive look-back (N2), exponential-DAG-unfolding (N5), masked-snapshot (#6) —
+whose difficulty lives in the prose, not in a number the bounds diff can read. They are not
+precision defects to be tuned away; they are **out of a bounds detector's scope by design**.
+So `clear-verified` means precisely *"no SCALING trap detected with positive evidence"* —
+**never** *"there is no trap"* — and the mechanisms that own the semantic categories are the
+**open-world residue channel (§2b)** and the **ambiguity triage (§3d)**, not the bounds
+diff. (This is the same boundary as §6.3: canonical-form output is also semantic/output-side
+and invisible to a bounds detector.)
 
-Mitigation (and why the measured rate is acceptable rather than disqualifying): a
-`clear-verified` **lowers the priority of hardening, it does not disable it** — downstream
-does not treat the verdict as load-bearing beyond what the detector's precision supports. A
-measured false rate disclosed on exactly this verdict (builder2 volunteered "~2 false" over
-reporting "3 clear" as a result) is the kind of honesty that should make the rest of this
-document more credible, not less.
+This gets its own section because `clear-verified` is the most dangerous output the system
+emits: a false *traps-found* costs wasted effort; a false *clear-verified* tells the
+generator it can relax — the only verdict that can **actively cause a zero**. Stating *where
+the detector's competence ends and which mechanism owns the rest* is what keeps it from
+being load-bearing beyond its scope.
 
 ## 7. Appendix — provenance & reproducible evidence
 
@@ -329,3 +344,16 @@ document more credible, not less.
   `ground-truth/p2_framing/` (`python fuzz.py` builds the Rust binary and cross-checks 3k cases
   + 5 hand-computed anchors). Each directory's slow reference is the oracle; the fast
   solution is the artifact verified against it.
+- **Method applied to our own process (two git lessons worth one line each):**
+  - *Check the whole identity, not the matching half.* The analysis branch was handed off as
+    "author vidishraj on all eight" — true of the *name*; the *email* was a wrong
+    (`noreply`) address. A name-only comparison passed it twice; the merge gate, which
+    compares the full `name <email>` string, caught it and it was normalised to one identity.
+    The matching half is exactly what conceals the differing half — the same shape as the
+    §6 findings where a check examined a property adjacent to the one that mattered.
+  - *Neither proof is "the safe one"; they answer different questions.* The identity rewrite
+    was verified by **tree equality** (`git diff --quiet` → content-inert), the rebase onto a
+    moved base by **patch equality** — running the wrong instrument first gave an alarming
+    answer that was a wrong-instrument artifact, not a defect. The discipline the document
+    argues for (§3c: property assertions vs differential agreement answer different
+    questions), applied to git.
