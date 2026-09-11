@@ -13,9 +13,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from typing import Any, Callable
+
 from .budget import BestSoFar, TimeBudget
 from .contracts import Candidate, Problem, SpecSheet, VerdictReport
 from .generator import battery_values, check_generator, deterministic_battery
+from .model_generator import request_generators
 from .runlog import RunLog
 from .stages import adjudicate, analyse, generate, verify
 
@@ -23,6 +26,9 @@ from .stages import adjudicate, analyse, generate, verify
 # cap so a generous deadline doesn't mean minute-long stub runs.
 _SMOKE_FRACTION = 0.5
 _SMOKE_CAP_S = 10.0
+# Per-candidate wall-clock budget for the max-size performance probe.
+_PERF_FRACTION = 0.3
+_PERF_CAP_S = 10.0
 
 
 @dataclass
@@ -50,7 +56,14 @@ def solve(
     start: Optional[float] = None,
     n_candidates: int = 1,
     runlog: Optional[RunLog] = None,
+    input_client: Any = None,
+    to_request: Optional[Callable[[Any], Any]] = None,
 ) -> SolveResult:
+    """``input_client`` + ``to_request`` wire the model-written generator (via
+    client2's ``solver.llm`` seam) so the performance probe runs on real max-size
+    inputs. When absent (the default, and until the live-call credential lands)
+    the deterministic battery is used and the probe stays inert. Supplying both
+    is the one-line flip."""
     out_path = Path(out_path)
     budget = TimeBudget(problem.deadline_s, start=start)
     log = runlog or RunLog(problem.problem_id, start=budget.start)
@@ -85,15 +98,33 @@ def solve(
 
     # 3. verify (property assertions + differential) + establish best-so-far ASAP
     with log.stage("verify") as rec:
-        # Spec-driven input battery (deterministic fallback until the model
-        # generator lands). Coverage gaps are surfaced loudly in the run log: a
-        # generator that never hits an edge or a hot path would let checks pass
-        # on inputs that stress nothing.
+        # Spec-driven input battery. The model generator (when a client is wired)
+        # supplies the valid battery AND per-hot-path max-size inputs that let the
+        # perf probe run; otherwise a deterministic battery covers structural
+        # edges only. Coverage gaps are surfaced loudly in the run log: a
+        # generator that never hits an edge or a hot path would let checks pass on
+        # inputs that stress nothing.
         battery = deterministic_battery(spec)
-        gen_report = check_generator(spec, battery, stress=[])
+        stress: list = []
+        if input_client is not None and to_request is not None:
+            try:
+                m_battery, m_stress = request_generators(spec, input_client, to_request)
+                if m_battery:
+                    battery = m_battery
+                stress = m_stress
+            except Exception as exc:  # never fail closed on a bad generator
+                log.event("model generator failed; using deterministic battery", error=str(exc))
+        gen_report = check_generator(spec, battery, stress)
+        big_inputs = [s.value for s in stress] or None
+        perf_limit_s = max(1.0, budget.slice_for(_PERF_FRACTION, cap=_PERF_CAP_S)) if big_inputs else None
         smoke_s = budget.slice_for(_SMOKE_FRACTION, cap=_SMOKE_CAP_S)
         report = verify(
-            candidates, spec, timeout_s=max(1.0, smoke_s), inputs=battery_values(battery) or None
+            candidates,
+            spec,
+            timeout_s=max(1.0, smoke_s),
+            inputs=battery_values(battery) or None,
+            big_inputs=big_inputs,
+            perf_limit_s=perf_limit_s,
         )
         # Best-so-far on disk = the first candidate that RAN (never fail closed),
         # even if it later fails a property; a verified-better one overwrites it.

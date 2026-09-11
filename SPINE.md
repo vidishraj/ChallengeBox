@@ -81,6 +81,16 @@ Real (landed since the spine):
   while testing nothing. A deterministic battery covers the structural edges
   offline; the model-written generator (through the LLM seam) covers the prose
   clauses and hot paths and is gated on the live-call confirmation.
+- `model_generator` (`solver/model_generator.py`) is the model-written generator,
+  prepared against the seam so activation is a config flip. It makes TWO distinct
+  calls, not conflated: a valid-input battery across the stated domains, and (per
+  flagged hot path, with the hot path passed IN as the target) one maximum-size
+  input built to explode that quantity while staying in bounds. Output is a
+  compact plan (literal / repeat / range) materialised into concrete inputs, so a
+  huge input is a rule not a huge literal. It is decoupled from the concrete seam
+  via an injected client; `solve(input_client=..., to_request=...)` is the flip
+  that feeds the coverage-checked battery and the max-size inputs to the perf
+  probe. Until the credential lands, the deterministic battery is used.
 - `verify` runs four checks (cheapest, most independent first): PROPERTY
   ASSERTIONS on each output against the extracted canonical-form properties (a
   confirmed failure, no second candidate required); NAIVE-VERSUS-FAST against a
