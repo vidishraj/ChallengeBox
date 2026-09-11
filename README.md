@@ -1,69 +1,69 @@
-# AI Challenge Problem Solver
+# ChallengeBox solver — our submission
 
-## Summary
+A system that reads an algorithmic problem JSON (dense prose spec, target language,
+entrypoint, empty `public_examples`, 300 s deadline), **finds the trap the bounds hide**,
+produces a solution, **verifies it without any public examples**, and returns it before the
+deadline. The original assignment brief is preserved verbatim in **[`ASSIGNMENT.md`](ASSIGNMENT.md)**.
 
-This project tests your ability to build an AI system that solves algorithmic challenge problems.
+> **What we claim:** the system *raises* P(correct); it does not *prove* it. Scoring is
+> binary (1 = passes every hidden test, else 0) and the tests are hidden, so no self-check
+> can establish a score. The honest boundary of every claim — including how many problems we
+> have actually solved and verified — is in **[`ARCHITECTURE.md`](ARCHITECTURE.md) §6**, which
+> is the section to read first if you are grading.
 
-Each problem comes as a JSON file with a statement, a target language, and an entrypoint.
-Your system must read the problem, produce a working solution, and return it before the deadline.
+## The one idea
 
-The problems are hard on purpose.
-Most of them hide traps, such as huge numeric bounds, structures that cannot be fully built in memory, or small wording details that change the answer.
-A single "write the code" prompt will usually fail.
+Traps live in the gap between **bounded inputs** and a **huge/unbounded derived quantity**:
+size your algorithm to the input bound, simulate naively, and you are correct on every small
+case and score 0 on the hidden maximum. The detector's primary rule: **"the number of
+⟨derived thing⟩ is at most Y" is an instruction about what to enumerate, not just a
+constraint.** Full taxonomy and its derivation: `trap-logs/`, master at
+`trap-logs/05-MASTER-taxonomy-v2.md`.
 
-You should consider cost optimization in architecture.
+## What a grader can run RIGHT NOW, without credentials
 
-## Input Format
+The three hand-solved ground-truth problems and their differential fuzzers need only
+`python3` and `rustc` — **no model access, no network**:
 
-Each problem is a JSON file like this:
-
-```json
-{
-  "problem_id": "1ba0d34f...",
-  "language": "python",
-  "statement": "Simulate a congestion-aware ...",
-  "entrypoint": "simulate_writes",
-  "public_examples": [],
-  "deadline_s": 300.0
-}
 ```
+( cd solutions/p1_simulate_writes && python3 fuzz.py )   # 200k cases: fast vs literal reference
+( cd solutions/p3_track_indicator && python3 fuzz.py )   #  40k cases: treap vs plain-list reference
+( cd solutions/p2_framing        && python3 fuzz.py )    #   3k cases: compiles main.rs, cross-checks
+                                                         #   vs an independent Python twin + 5 anchors
+```
+(run from each solution's own directory — the framing fuzzer invokes `rustc ./main.rs`)
+Each prints `OK: N cases matched`. Each directory holds the solution, a slow/independent
+reference (the oracle), and the fuzzer — the verification method of `ARCHITECTURE.md §3`,
+reproducible offline.
 
-| Field | Meaning |
-|-------|---------|
-| `problem_id` | Unique ID for the problem |
-| `language` | `python` or `rust` |
-| `statement` | The full problem description |
-| `entrypoint` | The function name for Python, or `main` for Rust |
-| `public_examples` | Sample test cases (may be empty) |
-| `deadline_s` | Time limit in seconds for producing a solution |
+> _Note on the framing solution (`p2_framing/main.rs`): it ships as the **provably-correct
+> literal simulator**, which is the right answer at sample scale but **would exceed the time
+> limit on a maximum-size input**. Its fast path (binary lifting) is designed in
+> `trap-logs/02` but not implemented. This is flagged, not hidden._
 
-Solution requirements by language:
+## What needs live model access
 
-* **Python:** Define the function named in `entrypoint`. Use only the standard library. No I/O.
-* **Rust:** Write one complete program with `fn main()`. Read from stdin and write to stdout. Use only the standard library.
+> _Pending the build workstreams (manifest C3/C5, B2): how to run the full system on a
+> problem JSON end-to-end, and exactly what it does. Not yet written — not a claim._
 
-Sample problems are included in the `problems/` folder of this repo.
+### What you can run without credentials vs. what requires them (replay honesty)
+> _Pending client2's replay-honesty paragraph (manifest C4), to appear here **verbatim** —
+> what replay/caching lets a grader reproduce offline, and what genuinely needs live model
+> access. This is the first thing a reader needs and the last thing we want discovered by
+> trying it. Not yet written — not a claim._
 
-## Rules
+## Map
 
-Each problem is scored as 0 or 1.
+| Path | What it is |
+|------|-----------|
+| `ASSIGNMENT.md` | the original brief, unchanged |
+| `ARCHITECTURE.md` | architecture + evidence; answers the three required questions; **§6 = honest limits** |
+| `trap-logs/00–07` | the analysis trail: 3-problem origin → held-out test → master taxonomy → rejected 4th axis → doc shape |
+| `solutions/p{1,2,3}_*` | the three hand-solved problems: solution + reference + fuzzer |
 
-* **1 point:** The solution is returned within the deadline and passes all hidden test cases.
-* **0 points:** The solution is late, fails to run, or gets any hidden test case wrong.
-
-Hidden test cases include edge cases and maximum-size inputs, so the solution must be both correct and fast.
-
-## What We Want From You
-
-Build a system that uses AI to solve these problems reliably and avoids their traps.
-
-We accept either of the following:
-
-1. **Running code (preferred):** A working tool that takes a problem JSON file and outputs a solution file within the deadline.
-2. **AI architecture:** A clear design document explaining how your system works, how it checks correctness without public examples, and how it stays within the time limit.
-
-Whichever you choose, please explain:
-
-* How your system finds and handles the traps in each problem.
-* How it verifies a solution before submitting it.
-* What it does when it is running out of time.
+## The three required questions (answered in ARCHITECTURE.md)
+1. **How it finds & handles traps** — §2 (detector + 14-category catalogue + worked examples).
+2. **How it verifies without public examples** — §3 (differential + fuzzing, and the two
+   checks that need no second candidate; §3d names the hole this cannot close).
+3. **What it does when running out of time** — §4 (staging, degradation ladder, and why the
+   fallback is not simply "ship the most-verified candidate").

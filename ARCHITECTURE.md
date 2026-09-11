@@ -72,23 +72,29 @@ added 5). The 14 categories, grouped by what they force:
 **We do not claim this catalogue is complete.** §6 presents the singleton evidence that it
 is not converged, and the architectural consequence (the detector is open-world).
 
-### 2b. The detector
+### 2b. The detector (as built)
 
-> _Pending manifest item **B1/B2** from the detector workstream (builder2): the detector's
-> input→output contract, whether it implements the strong derived-bound-as-instruction
-> form and open-world residue flagging, and whether it can return a "no trap here" verdict.
-> This subsection will describe **what is actually built**, not the spec. Not yet written —
-> do not read this placeholder as a claim._
+**Detection is heuristic — regex and keyword matching over the statement, not semantic
+understanding.** It is a real signal that points the generator at the likely trap; it is
+**not** a solver and does not reason about the problem. Stated plainly so the rest is read
+at the right weight.
 
-The design this subsection will document (spec, from `trap-logs/05` §"PRIMARY detector
-rule") requires three properties, each of which §6 will confirm as built or flag as not:
-(i) the strong bounds-diff; (ii) **open-world** residue flagging — score a problem's traps
-against the 14 categories **and** flag residue fitting none, because a closed 14-way
-classifier would silently return "no trap" on a 15th category, a check that cannot fail on
-the case it most needs to catch; (iii) **"no complexity trap here" as a first-class
-verdict** — a detector that always finds a trap over-engineers problems whose real
-difficulty is semantic precision (`Patchboard`/S7 has genuinely generous bounds), burning
-budget and shipping needlessly complex, more bug-prone code.
+What is built and shipping (B1, on observed behaviour, not intent):
+- **The strong derived-bound form is built and primary.** It reads "the number of ⟨derived
+  thing⟩ is at most Y" as an instruction; a real output on a real sample is
+  `150,000 → maximal surviving rectangles`.
+- **The open-world residue channel is built** and fired on 2 of the 10 samples — residue
+  that fits no known category is surfaced rather than silently dropped, because a closed
+  14-way classifier would return "no trap" on a 15th category, the one case it most needs
+  to catch.
+- **`clear-verified` is a distinct contract value from "nothing matched"** and requires
+  positive evidence to emit — it is not the default when no rule fires.
+
+Real run over all 10 samples: **7 traps-found, 3 clear-verified.** The catalogue the
+detector scores against is the 14 categories of §2a (the registry was initially seeded from
+9; see §6.6 on why the other 5 names were briefly missing). The `clear-verified` verdict is
+the most dangerous the system emits and carries a measured false rate — treated in its own
+right at **§6.7**, not buried here.
 
 ### 2c. Worked examples (detector output → technique), on the 3 hand-solved problems
 
@@ -119,34 +125,47 @@ second candidate to be right**, which matters because the others can share an er
 > that decorrelates candidates (different model / prompt / algorithm family). Not yet
 > written — not a claim._
 
-### 3b. The verification ladder (differential + fuzzing + scale)
+### 3b. The verification ladder — what runs today vs. the method
 
-Differential agreement between independently-derived candidates, exercised by **edge-biased
-random generators** (not uniform — tiny caps, zero budgets, empty inputs, single elements,
-boundary-straddling cases), plus max-scale timing to confirm the trap is actually defused.
-This rung is **valid only where the output is a unique scalar/tuple** (see §3c/§3d for where
-it is not). My manual application of it on the three hand-solved problems — the method the
-automated sandbox implements — ran **200,000** cases (`simulate_writes`, fast vs literal),
-**40,000** (`track_indicator`, treap vs plain-list), and **3,000 cross-language** cases
-(framing, Rust vs an independent Python twin), all matching; artifacts are the `fuzz.py` in
-each solution directory.
+**What the live harness executes today is "did it run", not "is it correct" — not even
+differential agreement yet.** The sandbox *is* built and genuinely exercised under test (45
+unit tests): a Python subprocess under a memory cap; Rust compiled **both with overflow
+checks and without**; and it classifies every outcome class, **including detected integer
+overflow**. But it currently checks that a candidate *runs and produces output*, not that
+the output is right. This is the honest floor; the rungs below are the method being wired
+onto that sandbox, and §6 states what is and is not executed.
 
-> _Pending manifest item **B2/B3** (builder2): the sandbox's real execution model and
-> resource limits, and whether the assertion rung below is implemented in-harness. Not yet
-> written — not a claim._
+The method (the design the sandbox is being extended to run): differential agreement
+between independently-derived candidates, exercised by **edge-biased random generators**
+(tiny caps, zero budgets, empty inputs, single elements, boundary-straddling cases), plus
+max-scale timing. This rung is **valid only where the output is a unique scalar/tuple** (see
+§3c/§3d for where it is not). I applied it **manually** on the three hand-solved problems —
+**200,000** cases (`simulate_writes`, fast vs literal), **40,000** (`track_indicator`, treap
+vs plain-list), **3,000 cross-language** (framing, Rust vs an independent Python twin), all
+matching; artifacts are the `fuzz.py` in each solution directory. These are real results,
+but they are *my manual runs*, not yet something the live harness performs.
 
-### 3c. The two checks that need no second candidate to be right
+### 3c. The two checks that need no second candidate — EXTRACTED, not yet EXECUTED
 
-When candidates might share a misreading, two rungs still have independent footing:
+When candidates might share a misreading, two rungs still have independent footing — and
+they are the design's answer to the §3d hole. **Status today: the analyse stage EXTRACTS
+the material for both, but nothing yet EXECUTES it against a candidate's output.** Stated at
+the honest floor so the capability is rewritten *upward* with evidence when it lands, not
+trimmed down from an optimistic draft:
 
-1. **Output property assertions.** Properties the correct answer must satisfy, checked
-   directly on one output. Essential for **canonical-form** problems (`normalize_protection`):
-   is the output sorted, are the intervals maximal, is the merge rule respected, is it *the*
-   unique canonical form? These are checkable without a second candidate.
-2. **Structural invariants.** Truths implied by the spec that a miscount violates regardless
-   of the oracle — e.g. in `simulate_writes`, for every valid packet `attempts == retries+1`
-   (the terminal/drop attempt is the "+1" over scheduled retries). I assert this against the
-   reference; it catches counting bugs no cross-check would.
+1. **Output property assertions.** Properties the correct answer must satisfy, checked on a
+   single output without a second candidate — for **canonical-form** problems
+   (`normalize_protection`): sorted? intervals maximal? merge rule respected? the *unique*
+   canonical form? _Extraction status: canonical-form output properties extracted on **2 of
+   10** samples; none executed against output yet._
+2. **Structural invariants.** Spec-implied truths a miscount violates regardless of oracle —
+   e.g. `simulate_writes`, every valid packet `attempts == retries+1`. I assert this
+   manually against my reference; it catches counting bugs no cross-check would. _Extraction
+   status: invariants extracted on **9 of 10** samples; none executed yet._
+
+The thin vertical slice under construction turns extraction into execution; builder2 will
+report the moment assertions actually run against outputs, at which point this section gets
+rewritten upward with evidence. Until then: extracted, not executed.
 
 ### 3d. The known hole, and its honest mitigation
 
@@ -194,23 +213,39 @@ most-verified artifact.
 This section is first-class, not a footnote, because the honest boundary of our claims is a
 stronger argument for our judgement than any coverage number.
 
-### 6.1 End-to-end coverage — the honest count
-**Live end-to-end problems solved *and* verified by the running system: `0` of 10** at the
-time of this draft. The live model path is blocked pending a credential decision (escalated
-to the Overseer). This number is a single slot here and will be updated only to what is
-actually exercised live; it will not be inflated by design intent.
+### 6.1 End-to-end coverage — the honest count (two numbers, not one)
+One number cannot carry both meanings, so we report two:
+- **(a) Problems for which the running system produced a candidate that passed *our own*
+  verification (§3): `__` of 10.**
+- **(b) Problems we can confirm would score 1 on the hidden tests: *unknowable*.** There is
+  no oracle; our verification *raises* P(correct), it does not establish it. We do not
+  estimate (b) from (a).
 
-What *is* real and testable today, stated without rounding up:
-- **Three problems hand-solved with committed ground-truth code and differential fuzzers.**
-  Two are **fully verified** against independent references over tens of thousands of
-  edge-biased cases: `simulate_writes` (200k cases) and `track_indicator` (40k cases). The
-  third, **framing, ships as the provably-correct literal simulator**; its fast path was
-  **designed but not implemented** and **would TLE at maximum size** — flagged when produced
-  and still flagged here.
-- The detector, sandbox, and triage **as built** are described in §§2b/3/4/5 and will be
-  characterised from builder2/client2's delivered facts as **tested against synthetic
-  cassettes and the three hand-solved references**, **not exercised live**, if that remains
-  true at submission.
+As of this draft, **(a) = 0** — and **not because of the credential** (that path is now
+sanctioned). It is zero because `generate()` and `verify()` are still spine stubs:
+`generate` emits a placeholder that *runs* but solves nothing, and `verify` today checks
+"did it run", not "is it correct" (§3b). The sanctioned credential unblocks the path; the
+pipeline behind it is unfinished. (a) will move only to whatever the finished system
+**actually achieves by our checks** — never because a candidate merely compiled or passed
+inputs we generated ourselves. It will not drift upward on partial evidence.
+
+What *is* exercised today — **five separate true statements, kept separate rather than
+rounded into one**:
+1. The pipeline runs **end to end and delivers a file on 10 of 10** within the deadline (via
+   the stub candidate plus a best-so-far-on-disk rule).
+2. The sandbox is genuinely exercised under test: a Python subprocess under a memory cap;
+   Rust compiled **both with overflow checks and without**; **every outcome class, including
+   detected integer overflow**.
+3. The analyse stage extracts a structured SpecSheet on **10 of 10**.
+4. **45 unit tests pass.**
+5. **Not yet:** no cassettes recorded, and the three hand-solved references are not wired
+   into the harness.
+
+Separately, the three **hand-solved** problems have committed ground-truth code + fuzzers:
+two **fully verified** (`simulate_writes` 200k cases, `track_indicator` 40k cases); the
+third, **framing, ships as the provably-correct literal simulator** whose fast path is
+**designed but not implemented** and **would TLE at maximum size** — flagged when produced
+and still flagged. These are *my manual* verifications, not harness output (§3b).
 
 > A system demonstrated on recorded runs with three hand-verified ground truths is a
 > defensible thing to submit. A system *implied* to have solved ten when it solved none is
@@ -233,7 +268,10 @@ For a canonical-form problem (`normalize_protection`), two correct candidates ca
 on a non-canonical shape (a false pass, both scoring 0). So for that class, the differential
 rung is unsound in both directions; only the property assertions of §3c have footing. This
 is why those assertions outrank differential testing whenever the output shape is
-constrained.
+constrained. **Measured frequency:** the analyse stage extracted canonical-form output
+properties on **2 of 10** samples — so this class is **rare but real** in the corpus (~20%),
+neither ignorable nor the common case. We prefer putting a number on the risk to either
+"we handle it" or silence.
 
 ### 6.4 Correct asymptotics ≠ fast enough; and a designed-not-built fast path
 `track_indicator`'s treap is O(log n)/op and correct, yet ~33 s in CPython at the ceiling —
@@ -257,11 +295,29 @@ you cannot construct an input that separates the two readings, the clause is not
 ambiguous.* A proposed verification mechanism, analysed, found correlated with its target,
 rejected, and replaced with something falsifiable — documented in full at `trap-logs/06`.
 
-### 6.6 Residual risks carried from the build side
-> _Pending **B4** (builder2 coverage) and **C4** (client2 replay-honesty paragraph: what
-> replay/caching does and explicitly does NOT do). These land verbatim here so the
-> replay/coverage boundary is stated in the system's own words. Not yet written — not a
-> claim._
+### 6.6 Replay / coverage boundary carried from the build side
+> _Pending **C4** (client2 replay-honesty paragraph: what replay/caching does and explicitly
+> does NOT do), to land here **verbatim** so the replay boundary is stated in the system's
+> own words. (Coverage is now in §6.1; this slot is the replay paragraph only.) Not yet
+> written — not a claim._
+
+### 6.7 The most dangerous verdict: `clear-verified` and its false-clear rate
+Of the detector's 10-sample run (§2b), **3 were `clear-verified`**. My own analysis found
+only **~1** of those genuinely has generous bounds and no scaling trap (`Patchboard`/S7).
+So roughly **2 are false-clears** — scaling traps the regex/keyword heuristics missed.
+
+This gets its own section, not a footnote, because **`clear-verified` is the most dangerous
+output the system emits.** A false *traps-found* costs wasted effort and nothing more. A
+false *clear-verified* tells the generator it can relax — it is the only detector verdict
+that can **actively cause a zero**. The verdict therefore means, precisely, *"no scaling
+trap was DETECTED with positive evidence"* — **never** *"there is no trap."*
+
+Mitigation (and why the measured rate is acceptable rather than disqualifying): a
+`clear-verified` **lowers the priority of hardening, it does not disable it** — downstream
+does not treat the verdict as load-bearing beyond what the detector's precision supports. A
+measured false rate disclosed on exactly this verdict (builder2 volunteered "~2 false" over
+reporting "3 clear" as a result) is the kind of honesty that should make the rest of this
+document more credible, not less.
 
 ## 7. Appendix — provenance & reproducible evidence
 
