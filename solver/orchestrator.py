@@ -15,6 +15,7 @@ from typing import Optional
 
 from .budget import BestSoFar, TimeBudget
 from .contracts import Candidate, Problem, SpecSheet, VerdictReport
+from .generator import battery_values, check_generator, deterministic_battery
 from .runlog import RunLog
 from .stages import adjudicate, analyse, generate, verify
 
@@ -84,8 +85,16 @@ def solve(
 
     # 3. verify (property assertions + differential) + establish best-so-far ASAP
     with log.stage("verify") as rec:
+        # Spec-driven input battery (deterministic fallback until the model
+        # generator lands). Coverage gaps are surfaced loudly in the run log: a
+        # generator that never hits an edge or a hot path would let checks pass
+        # on inputs that stress nothing.
+        battery = deterministic_battery(spec)
+        gen_report = check_generator(spec, battery, stress=[])
         smoke_s = budget.slice_for(_SMOKE_FRACTION, cap=_SMOKE_CAP_S)
-        report = verify(candidates, spec, timeout_s=max(1.0, smoke_s))
+        report = verify(
+            candidates, spec, timeout_s=max(1.0, smoke_s), inputs=battery_values(battery) or None
+        )
         # Best-so-far on disk = the first candidate that RAN (never fail closed),
         # even if it later fails a property; a verified-better one overwrites it.
         for verdict in report.verdicts:
@@ -102,6 +111,11 @@ def solve(
             statuses={v.candidate_id: (v.exec_result.status.value if v.exec_result else "?") for v in report.verdicts},
             disagreement_kinds=[d.kind for d in report.disagreements],
             smoke_timeout_s=round(smoke_s, 3),
+            # generator coverage (loud even on the deterministic fallback):
+            input_battery=len(battery),
+            edge_gaps=len(gen_report.edge_gaps),
+            hot_path_gaps=len(gen_report.hot_path_gaps),
+            generator_covered=gen_report.covered,
         )
 
     # 4. adjudicate disagreements -> the chosen candidate. Defensive: use the

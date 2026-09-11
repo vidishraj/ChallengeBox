@@ -71,6 +71,16 @@ Real (landed since the spine):
   catalogue is not converged. Its `status` earns a `clear-verified` verdict only
   on positive evidence and keeps it distinct from `inconclusive` / `not-run`;
   `residue_fired` is logged per problem as a held-out coverage metric.
+- `generator` (`solver/generator.py`) derives inputs from the SPEC (a call kept
+  distinct from candidate generation, so a misreading cannot propagate into both
+  the solution and the inputs that test it). Its load-bearing part is the
+  COVERAGE CONTROL: it fails loudly unless every extracted edge clause (and every
+  structural edge: empty, singleton, each bound at its extreme) is exercised, and
+  unless every flagged hot path has a max-size input aimed at it. A max-size
+  input that does not explode the flagged quantity would make the perf probe pass
+  while testing nothing. A deterministic battery covers the structural edges
+  offline; the model-written generator (through the LLM seam) covers the prose
+  clauses and hot paths and is gated on the live-call confirmation.
 - `verify` runs four checks (cheapest, most independent first): PROPERTY
   ASSERTIONS on each output against the extracted canonical-form properties (a
   confirmed failure, no second candidate required); NAIVE-VERSUS-FAST against a
