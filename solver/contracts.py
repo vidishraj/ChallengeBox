@@ -113,6 +113,35 @@ class TargetPolicy:
 
 
 @dataclass
+class HotPathQuantity:
+    """A derived quantity that is large or unbounded while its inputs stay small.
+
+    The core trap pattern: inputs are bounded to friendly sizes but a quantity
+    the described PROCESS produces (an iteration count, an accumulation, a span, a
+    repetition) is huge or unbounded and is NOT itself an input bound. Sizing an
+    algorithm to the input bound then passes every small input and scores zero on
+    the hidden maximum. Each flag carries the sentence that creates it and a
+    taxonomy tag, and feeds verify()'s performance probe as a specific target.
+    """
+
+    quantity: str  # short name, e.g. "spin cost per packet", "combined reversed length"
+    source_sentence: str  # the statement sentence that creates it
+    magnitude: str = ""  # bound hint, e.g. "~1e18", "unbounded"
+    category: str = ""  # taxonomy tag, e.g. "counter-not-a-loop" (see policy registry)
+    why: str = ""  # short reason it can explode
+
+
+@dataclass
+class BoundsDiff:
+    """analyse()'s bounds subtraction: what the inputs bound vs what the process
+    can produce. ``hot_paths`` is the flagged difference verify() aims at."""
+
+    input_bounds: list[str] = field(default_factory=list)  # bounded input quantities + bounds
+    derived_quantities: list[str] = field(default_factory=list)  # quantities the process produces
+    hot_paths: list[HotPathQuantity] = field(default_factory=list)  # large/unbounded & not input-bound
+
+
+@dataclass
 class SpecSheet:
     """Structured reading of a statement — the analyse() output.
 
@@ -126,6 +155,7 @@ class SpecSheet:
     invariants: list[str] = field(default_factory=list)  # stated invariants
     edge_cases: list[str] = field(default_factory=list)  # trap / edge-case clauses
     output_contract: str = ""  # what the return value / stdout must be
+    bounds_diff: Optional[BoundsDiff] = None  # input-vs-derived bounds; hot paths for the perf probe
     target: Optional[TargetPolicy] = None  # language-target constraints
     raw_statement: str = ""
 
@@ -183,6 +213,29 @@ class Verdict:
     passed: bool
     detail: str = ""
     exec_result: Optional[ExecResult] = None
+    # Performance probe result (set by verify()'s perf probe; consumed by the
+    # generation side for cheap-path vs escalation decisions). Agreement says
+    # nothing about speed, and a correct-but-slow candidate scores zero.
+    perf_ok: Optional[bool] = None  # None = not probed; True/False = cleared max-size within limits
+    max_input_duration_s: float = 0.0  # measured wall-clock at max size (logging / thresholds)
+
+
+@dataclass
+class Disagreement:
+    """A concrete divergence between candidates on one input, everything
+    adjudicate() needs to resolve it: the failing input, each candidate's output
+    on it, the divergent candidates, and (if verify localised it) the contended
+    spec clause."""
+
+    failing_input: Any  # the concrete input the candidates diverged on
+    outputs: dict[str, Any]  # candidate_id -> output on that input (see below)
+    candidates: list[Candidate]  # the divergent candidates (>= 2)
+    clause_hint: str = ""  # relevant spec sentence(s) if verify localised; else ""
+    seed: Optional[int] = None  # RNG seed that produced failing_input (repro; input may be huge)
+    kind: str = "value"  # "value" = differing returns; "status" = one ran, another crashed/timed-out/overflowed
+    # outputs[cid] is the return value (python) / stdout (rust) when that
+    # candidate ran OK; for a candidate that produced no value it is a string tag
+    # "<crashed>" / "<timed-out>" / "<overflowed>" and kind == "status".
 
 
 @dataclass
@@ -192,4 +245,4 @@ class VerdictReport:
 
     verdicts: list[Verdict] = field(default_factory=list)
     best: Optional[Candidate] = None
-    disagreements: list[Candidate] = field(default_factory=list)
+    disagreements: list[Disagreement] = field(default_factory=list)
