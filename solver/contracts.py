@@ -237,7 +237,7 @@ class Disagreement:
     candidates: list[Candidate]  # the divergent candidates (>= 2)
     clause_hint: str = ""  # relevant spec sentence(s) if verify localised; else ""
     seed: Optional[int] = None  # RNG seed that produced failing_input (repro; input may be huge)
-    kind: str = "value"  # see below: "value" | "status" | "form"
+    kind: str = "value"  # see below: "value" | "status" | "form" | "clause"
     canonical_hint: str = ""  # for kind == "form": the canonical-form clause(s) to normalise by
     # kind semantics:
     #   "value"  differing returns that stay different after canonical-form
@@ -248,6 +248,12 @@ class Disagreement:
     #            canonical form (two correct candidates, different normalisation).
     #            canonical_hint carries the clause so adjudicate() can
     #            normalise-and-recompare instead of spending a model call.
+    #   "clause" ambiguity triage: two explicit READINGS of a contended clause,
+    #            emitted as candidates and run on a discriminating input; can fire
+    #            even when the shipped candidates all agree. REQUIRES both
+    #            failing_input (the discriminating input) and clause_hint (the
+    #            contended sentence) — a clause flag with no discriminating input
+    #            is not a finding and MUST be dropped upstream, never emitted.
     # outputs[cid] is the return value (python) / stdout (rust) when the candidate
     # ran OK, else the status tag above.
 
