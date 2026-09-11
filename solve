@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Convenience wrapper: `./solve problem.json -> solution file`.
+# Runs the solver package regardless of the caller's working directory.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+PYTHONPATH="${here}${PYTHONPATH:+:${PYTHONPATH}}" exec python3 -m solver "$@"

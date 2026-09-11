@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.tmp
+# solver output (solutions + run logs) is regenerated, not source
+/solutions/
+/out/
