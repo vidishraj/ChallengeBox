@@ -4,7 +4,7 @@
 40,000 random op-sequences (empty→insert, reverse in/out of selection, remove of the
 selected tab with survivors right-only / left-only / none), all match; 300k-tab /
 200k-reverse max run completes (timing caveat below). Files:
-`solutions/p3_track_indicator/{solution,brute,fuzz}.py`.
+`ground-truth/p3_track_indicator/{solution,brute,fuzz}.py`.
 
 ## The solution in one paragraph
 An ordered sequence with `insert`-before-position, batch `remove`-by-id, and

@@ -22,35 +22,46 @@ constraint.** Full taxonomy and its derivation: `trap-logs/`, master at
 
 ## What a grader can run RIGHT NOW, without credentials
 
-The three hand-solved ground-truth problems and their differential fuzzers need only
-`python3` and `rustc` — **no model access, no network**:
+**(1) The ground-truth problems + their differential fuzzers** — need only `python3` and
+`rustc`, **no model access, no network**. These are the three hand-solved problems and the
+verification method of `ARCHITECTURE.md §3`, reproducible offline:
 
 ```
-( cd solutions/p1_simulate_writes && python3 fuzz.py )   # 200k cases: fast vs literal reference
-( cd solutions/p3_track_indicator && python3 fuzz.py )   #  40k cases: treap vs plain-list reference
-( cd solutions/p2_framing        && python3 fuzz.py )    #   3k cases: compiles main.rs, cross-checks
-                                                         #   vs an independent Python twin + 5 anchors
+( cd ground-truth/p1_simulate_writes && python3 fuzz.py )   # 200k cases: fast vs literal reference
+( cd ground-truth/p3_track_indicator && python3 fuzz.py )   #  40k cases: treap vs plain-list reference
+( cd ground-truth/p2_framing        && python3 fuzz.py )    #   3k cases: compiles main.rs, cross-checks
+                                                            #   vs an independent Python twin + 5 anchors
 ```
-(run from each solution's own directory — the framing fuzzer invokes `rustc ./main.rs`)
+(run from each problem's own directory — the framing fuzzer invokes `rustc ./main.rs`).
 Each prints `OK: N cases matched`. Each directory holds the solution, a slow/independent
-reference (the oracle), and the fuzzer — the verification method of `ARCHITECTURE.md §3`,
-reproducible offline.
+reference (the oracle), and the fuzzer.
 
-> _Note on the framing solution (`p2_framing/main.rs`): it ships as the **provably-correct
-> literal simulator**, which is the right answer at sample scale but **would exceed the time
-> limit on a maximum-size input**. Its fast path (binary lifting) is designed in
-> `trap-logs/02` but not implemented. This is flagged, not hidden._
+> _Note on the framing solution (`ground-truth/p2_framing/main.rs`): it ships as the
+> **provably-correct literal simulator**, the right answer at sample scale but it **would
+> exceed the time limit on a maximum-size input**. Its fast path (binary lifting) is designed
+> in `trap-logs/02` but not implemented. Flagged, not hidden._
+
+**(2) The solver spine** — the end-to-end pipeline (`SPINE.md`). It runs today and always
+delivers a file within the deadline, but **`generate`/`verify` are spine stubs** — it does
+not yet *solve* (see `ARCHITECTURE.md §6.1`, coverage = 0). The sandboxed execution, hard
+time budget, and best-so-far-on-disk rule are real:
+
+```
+./solve samples/<id>.json                      # writes ./solutions/<id>.<py|rs> + a runlog
+python3 -m unittest discover -s tests -t .     # the solver's unit tests
+```
 
 ## What needs live model access
 
-> _Pending the build workstreams (manifest C3/C5, B2): how to run the full system on a
-> problem JSON end-to-end, and exactly what it does. Not yet written — not a claim._
+The live generator is what turns the spine from "delivers a file" into "attempts a real
+solution." `./solve` runs offline **today** only because `generate` is a stub; once the live
+generator lands, `./solve` will call the model.
 
-### What you can run without credentials vs. what requires them (replay honesty)
-> _Pending client2's replay-honesty paragraph (manifest C4), to appear here **verbatim** —
-> what replay/caching lets a grader reproduce offline, and what genuinely needs live model
-> access. This is the first thing a reader needs and the last thing we want discovered by
-> trying it. Not yet written — not a claim._
+> _Pending the build workstreams: the exact end-to-end run once the live path is wired
+> (manifest C3/C5, B2), and — **verbatim** — client2's replay-honesty paragraph (C4): what
+> replay/caching lets a grader reproduce offline vs. what genuinely needs live model access.
+> The first thing a reader needs and the last thing we want discovered by trying it. Not yet
+> written — not a claim._
 
 ## Map
 
@@ -58,8 +69,12 @@ reproducible offline.
 |------|-----------|
 | `ASSIGNMENT.md` | the original brief, unchanged |
 | `ARCHITECTURE.md` | architecture + evidence; answers the three required questions; **§6 = honest limits** |
+| `SPINE.md` | the solver spine: what runs today vs. what is stubbed |
+| `solve`, `solver/` | the pipeline — `./solve problem.json` → solution file; stages in `solver/stages/` |
+| `tests/` | the solver's unit tests |
 | `trap-logs/00–07` | the analysis trail: 3-problem origin → held-out test → master taxonomy → rejected 4th axis → doc shape |
-| `solutions/p{1,2,3}_*` | the three hand-solved problems: solution + reference + fuzzer |
+| `ground-truth/p{1,2,3}_*` | the three hand-solved problems: solution + independent reference + fuzzer (tracked source) |
+| `solutions/`, `out/` | **solver output** — regenerated per run, git-ignored; not source (ground truth lives in `ground-truth/`) |
 
 ## The three required questions (answered in ARCHITECTURE.md)
 1. **How it finds & handles traps** — §2 (detector + 14-category catalogue + worked examples).

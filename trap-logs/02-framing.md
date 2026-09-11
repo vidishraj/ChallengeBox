@@ -4,7 +4,7 @@
 an independent Python twin over 3,000 random cases + 5 hand-computed cases pinning the
 spec edges. **The fast (non-TLE) version is designed but NOT implemented/verified** —
 see the complexity note; this is the weakest of my three as a *scored* submission.
-Files: `solutions/p2_framing/{main.rs,twin.py,fuzz.py}`.
+Files: `ground-truth/p2_framing/{main.rs,twin.py,fuzz.py}`.
 
 ## The model
 Process chars `L..=R` left to right, packing into chunks. A new chunk begins when there

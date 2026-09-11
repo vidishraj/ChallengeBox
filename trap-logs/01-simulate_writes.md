@@ -2,7 +2,7 @@
 
 **Status:** solved; fast solution fuzzed against a literal per-attempt reference over
 200,000 random cases (incl. 10¹⁸/10³⁰ scalars), all match; max-scale 200k×10¹⁸ run
-returns in 0.23s. Files: `solutions/p1_simulate_writes/{solution,reference,fuzz}.py`.
+returns in 0.23s. Files: `ground-truth/p1_simulate_writes/{solution,reference,fuzz}.py`.
 
 ## The solution in one paragraph
 Per valid packet, consume outcomes until a terminal one. `ok`→SENT (level−1 floor 0,

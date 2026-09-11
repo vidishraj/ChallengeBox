@@ -13,7 +13,7 @@ examples), and §4 (what it does when running out of time). Cost optimization is
 > proven something, §6 says so explicitly rather than implying coverage we did not earn.
 
 Evidence artifacts referenced throughout live in this repo:
-`solutions/p1_simulate_writes/`, `solutions/p2_framing/`, `solutions/p3_track_indicator/`
+`ground-truth/p1_simulate_writes/`, `ground-truth/p2_framing/`, `ground-truth/p3_track_indicator/`
 (each: a solution, a slow/independent reference, a differential fuzzer), and the analysis
 trail `trap-logs/00…07`.
 
@@ -104,14 +104,14 @@ These three are solved with committed code (§6 states their exact verification 
   Technique: after the level saturates at `level_cap`≤60, `cost` is constant, so a block of
   k retries is pure arithmetic (`retries+=k; credits−=k·cost; spins+=k·cost`). Result: a
   200k-packet × 10¹⁸-count instance returns in **0.23 s** (artifact:
-  `solutions/p1_simulate_writes/solution.py`; timing reproducible).
+  `ground-truth/p1_simulate_writes/solution.py`; timing reproducible).
 - **framing** — trap: Σ-spans unbounded. Technique (designed): per-position chunk-boundary
   precompute + binary lifting over chunks ⇒ O((N+Q)log N). **Shipped artifact is the
   literal O(Σspan) simulator** — provably correct, and the fast path is *designed but not
   implemented*; see §6 for why this is the weakest of the three.
 - **`track_indicator`** — trap: unbounded combined reversal length. Technique: implicit
   treap with a lazy reversal flag ⇒ O(log n)/op (artifact:
-  `solutions/p3_track_indicator/solution.py`).
+  `ground-truth/p3_track_indicator/solution.py`).
 
 ## 3. Verifying a solution without public examples (assignment Q2)
 
@@ -197,7 +197,7 @@ because a solution can be *provably correct and still score 0* by exceeding the 
 runtime limit. Two artifacts make this concrete: the framing solution we trust most is the
 literal simulator, which **TLEs at maximum size** (§6); and the `track_indicator` treap is
 correct and asymptotically right yet runs the 300k-tab / 200k-reverse ceiling in **~33 s**
-in CPython (`solutions/p3_track_indicator`), which may itself exceed a tight limit. The
+in CPython (`ground-truth/p3_track_indicator`), which may itself exceed a tight limit. The
 fallback logic must therefore weigh *proven-correct* against *plausibly-fast-enough*, and
 the degradation ladder (§4b) must encode that trade rather than defaulting to the
 most-verified artifact.
@@ -324,8 +324,8 @@ document more credible, not less.
 - **Analysis trail:** `trap-logs/00` (3-problem origin) → `04` (held-out test) → `05`
   (master v2 + convergence) → `06` (rejected fourth axis) → `07` (this document's shape).
   The sequence is the evidence of method, not just the result.
-- **Solutions & fuzzers (re-runnable):** `solutions/p1_simulate_writes/` (`python fuzz.py`,
-  200k cases), `solutions/p3_track_indicator/` (`python fuzz.py`, 40k cases),
-  `solutions/p2_framing/` (`python fuzz.py` builds the Rust binary and cross-checks 3k cases
+- **Solutions & fuzzers (re-runnable):** `ground-truth/p1_simulate_writes/` (`python fuzz.py`,
+  200k cases), `ground-truth/p3_track_indicator/` (`python fuzz.py`, 40k cases),
+  `ground-truth/p2_framing/` (`python fuzz.py` builds the Rust binary and cross-checks 3k cases
   + 5 hand-computed anchors). Each directory's slow reference is the oracle; the fast
   solution is the artifact verified against it.
